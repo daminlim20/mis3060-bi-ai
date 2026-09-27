@@ -100,20 +100,28 @@ Always keep the raw data unchanged, and write down the rule you applied.
 **Business-reasonableness questions** (answer in your own words):
 
 1. `security_id`, `shares`, and `price` are all null in exactly 101,597 rows. Looking at the `txn_type` value counts, which three transaction types would you expect to have no security -- and why? Do the counts add up to 101,597?
+- Deposit, Withdrawal, and Advisory Fee as these transaction types are just tracking the flow of money.No they do not add up to 101,597.
 
 2. There are 83,556 Buy transactions and 59,755 Sell transactions. What does it mean for a wealth management firm to have significantly more Buys than Sells over a five-year period?
+- I think having more buy transcations is a positive signal as that means more investors are lookoing ot invest their cpaital into your management firm rather than take money out. This also shows that there must be positive market growth or expected growth, new clients are buying, or dividend reinvestments taking place. 
 
 3. The `txn_date` column is stored as a string rather than a date. If Claude Coword generated code to compute the average number of days between transactions, what would go wrong if the dates remained as strings?
+- If txn_date stays as text, the code would not run correctly.Python can't subtract one piece of text from another, so the step that works out the days between transactions fails right away.Or, the code will try to work it out by interpreting the date into plain numbers. If the code turns the dates into plain numbers (2024-01-05 becomes 20240105), the subtraction runs but the result isn't in days. 
 
 4. Wildcat Capital has 2,700 clients served by 25 advisors. Is that ratio -- roughly 108 clients per advisor -- plausible for a registered investment advisory firm?
+- I was not too sure about the industry average,but after doing a little research I learned that it is normal for one advisor to service roughly 70-150 clients. 
 
 5. 836 `Buy` transactions have negative `shares` values (as low as -499.63), while every other transaction type in the dataset has only positive share values. What are two plausible business explanations for a negative share count on a Buy transaction, and what would you do next to determine which explanation is more likely?
+- Two possible explanations would be a simple typo error or a reversal of an initial buy. I think that the second explanation would be more likely, as all 836 negative values appear only in Buy transactions and none appear in Sell or Dividend. If these were random typos, I would expect to see negative values spread across other transaction types as well. When a buy is cancelled or corrected, the system could record a second Buy entry with a negative share count to undo the original.
+As for which explanation is more likely, I would first look for a matching earlier Buy for each negative row with the same client, same security, and the same number of shares, within a short time window. If most negative rows have a match, that supports the reversal explanation.
 
 **Cross-validation:**
 
 6. What did each script return?
+- Prompt A returned 83,556. Prompt B (298,772 total rows minus 215,216 rows of the other five types) also returned 83,556.
 
 7. Do the results agree? If not, which one is wrong and why?
+-Yes — both land on 83,556, and that also matches the assignment's known benchmark.
 
 8. Why is it useful to verify a count using subtraction rather than direct filtering?
-
+- One method only looks for the exact match ('Buy'), while the other works the opposite way as it counts  what's left over as the Buy count. Having the two validate each other is important because a bug that breaks one method (like a typo or inconsistent capitalization in txn type) makes sure that running both surfaces mismatches that either script alone would miss. If the two disagree, that guarantees something is wrong somewhere. If they do agree or match, it generally raises your confidence that the count is correct.
