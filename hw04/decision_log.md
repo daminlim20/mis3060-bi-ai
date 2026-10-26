@@ -129,3 +129,17 @@ Decisions are grouped: **A. defects fixed**, **B. suspicious rows flagged**, **C
 | C9 | `dim_date.is_trading_day` | Every weekday = 1, including market holidays (e.g. Jan 1) | Accuracy | Leave as is | Calendar logic is otherwise 100% correct; a holiday calendar is outside this data. | Trading-day counts slightly overstated. |
 | C10 | `active_alpha_ytd`, `return_ytd` scientific notation | ~900 values like `1.2e-05` | Validity (format only) | Leave as is | Valid numbers; every BI tool parses them once the type = Decimal. | None after type conversion. |
 | C11 | `dim_client.zip_code` | 232 ZIPs start with 0 (e.g. `03897`) | Validity (type) | Leave as text | ZIP is an identifier, not a number. | Must be set to Text in Power BI or leading zeros vanish. |
+
+---
+
+## Post-run reconciliation (added after running `02_clean.py`)
+
+The entries above were written before the cleaning code and are left unchanged. Running the code in the order defended at the top changed three counts, because rows quarantined first no longer need fixing:
+
+| Entry | Count in raw audit | Rows changed in `cleaning_log.csv` | Difference explained by |
+|---|---:|---:|---|
+| A2 state names | 78 | 77 | 1 duplicate client (A1) had a full state name |
+| A4 negative shares | 836 | 835 | 1 orphan transaction (A5) had negative shares |
+| A6 `security_id` `45.0` | 197,175 | 197,044 | 131 orphan transactions (A5) had a security_id |
+
+The A2 check "PA = 414 + 25 = 439" becomes **PA = 434** after A1 removes 5 duplicate PA clients; the script asserts that per-state totals are preserved by the mapping itself. Every other count (25, 75, 300, 1,475, 200, 2,410) matched the log exactly.
