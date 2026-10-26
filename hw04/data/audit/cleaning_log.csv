@@ -1,0 +1,15 @@
+table,issue,action,rows_affected,note
+dim_client,duplicate clients under new ids,quarantine,25,ids 2501-2525; originals kept; no fact rows referenced them
+dim_client,state stored as full name,standardize,77,7-entry USPS mapping
+dim_client,blank risk_profile,flag,75,not filled: benchmark 3 may be the system default
+fact_portfolio_snapshot,return_ytd stored as percent text,convert,300,verified: return - benchmark = alpha on all converted rows
+fact_portfolio_snapshot,YTD return > +100% or < -90%,flag,1475,178 clients; deposits counted as performance
+fact_transactions,client_id not in dim_client,quarantine,200,"gross amount $10,888,495.37; txn_id 298573-298772"
+fact_transactions,security_id stored as decimal text,standardize,197044,blanks left blank (cash flows)
+fact_transactions,negative shares on Buy,convert (abs),835,amount = |shares| x price verified on all rows first
+fact_transactions,transaction after client's last snapshot,flag,2410,"131 clients, all is_active = False"
+dim_advisor,none requiring change,leave as is,0,see decision_log.md section C
+dim_benchmark,none requiring change,leave as is,0,see decision_log.md section C
+dim_date,none requiring change,leave as is,0,see decision_log.md section C
+dim_security,none requiring change,leave as is,0,see decision_log.md section C
+fact_fees,none requiring change,leave as is,0,see decision_log.md section C
