@@ -60,7 +60,7 @@ Files are plain CSV; set these types on import instead of trusting auto-detect.
 | Table | Column | Rows = 1 | Meaning / how to use it |
 |---|---|---:|---|
 | dim_client | `is_risk_profile_missing` | 75 | `risk_profile` is blank and was **not** filled. Show as its own bucket; chase with advisors. |
-| fact_portfolio_snapshot | `is_return_suspect` | 1,475 (178 clients) | YTD return > +100% or < −90%; caused by deposits/withdrawals on small Retail accounts being counted as performance. **Exclude from average-return measures.** |
+| fact_portfolio_snapshot | `is_return_suspect` | 1,475 (178 clients) | YTD return > +100% or < −90%. `return_ytd` is simply AUM ÷ prior-December AUM − 1 (verified on 100% of rows), so any balance jump on a small Retail account reads as a huge return. **Exclude from average-return measures.** |
 | fact_transactions | `is_post_departure_txn` | 2,410 (131 clients) | Dated after the client's last monthly snapshot; all are `is_active = False` clients. Investigate before using in advisor activity metrics. |
 
 ## What was changed
@@ -79,7 +79,7 @@ Counts are after quarantine. The raw audit showed 78 / 836 / 197,175 for A2 / A4
 ## Known limitations (chosen not to fix)
 
 1. **Blank risk profiles (75 clients) were not filled.** All of them use benchmark 3, which only Balanced clients otherwise use. But that may be the system default for missing profiles, and suitability data should not be inferred.
-2. **Extreme returns are flagged, not recomputed.** A true time-weighted return needs cash-flow timing we don't have.
+2. **Extreme returns are flagged, not recomputed.** `return_ytd` is a balance change, not an investment return; a true time-weighted return needs cash flows that reconcile to AUM, and they don't (see 10).
 3. **Advisory Fee transactions do not reconcile to `fact_fees`** at monthly, quarterly or annual grain. Treat `fact_fees` as the billing system of record; don't sum fee revenue from `fact_transactions`.
 4. **28.4% of Buy/Sell trades fall on weekends,** about the same share as weekend days on the calendar (28.6%). Trade dates look like booking dates, not exchange dates, so day-of-week trading analysis is not meaningful.
 5. **`dim_date.is_trading_day` marks market holidays (e.g. Jan 1) as trading days.** No holiday calendar is available in this data.
@@ -87,3 +87,4 @@ Counts are after quarantine. The raw audit showed 78 / 836 / 197,175 for A2 / A4
 7. **One fee at 100.38 bps** (fee_id 68809) is slightly above every other fee; it reconciles to AUM × bps, and no documented cap exists.
 8. **Negative-share Buys were assumed to be sign errors, not reversals.** Nothing in the rows indicates a cancellation.
 9. **The 200 quarantined transactions may belong to real clients missing from `dim_client`.** They are kept in the quarantine file, so they can be restored if the client records turn up.
+10. **Snapshot AUM does not reconcile to the transaction ledger.** Month-to-month AUM changes have ~0 correlation (0.001) with that month's deposits − withdrawals. Use `fact_portfolio_snapshot` for balances and `fact_transactions` for activity; don't derive one from the other.

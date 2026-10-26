@@ -2,16 +2,18 @@ stage,reconciliation,detail,rows_checked,rows_failed,pass_rate
 raw,R1 fee amount = aum_basis x bps / 10000 / 12,"fact_fees, tolerance $0.01",122197,0,100.0
 raw,R2 fee aum_basis = snapshot aum (same client-month),fact_fees vs fact_portfolio_snapshot,122197,0,100.0
 raw,R3 active_alpha = return_ytd - benchmark_return_ytd,"fact_portfolio_snapshot, tolerance 0.0001",129547,300,99.768
+raw,R3b return_ytd = aum / prior-December aum - 1,"fact_portfolio_snapshot rows with a prior December, tolerance 0.001",104823,246,99.765
 raw,R4 trade amount = shares x price,"fact_transactions trades, tolerance $0.01",197175,836,99.576
-raw,R5 fees: advisor_id = dim_client.advisor_id,fact vs dim_client,122197,0,100.0
-raw,R5 snapshots: advisor_id = dim_client.advisor_id,fact vs dim_client,129547,0,100.0
-raw,R5 transactions: advisor_id = dim_client.advisor_id,fact vs dim_client,298772,200,99.933
+raw,R5 fees: advisor_id = dim_client.advisor_id,"fact vs dim_client, known clients only",122197,0,100.0
+raw,R5 snapshots: advisor_id = dim_client.advisor_id,"fact vs dim_client, known clients only",129547,0,100.0
+raw,R5 transactions: advisor_id = dim_client.advisor_id,"fact vs dim_client, known clients only",298572,0,100.0
 raw,R6 one benchmark return per benchmark-month,fact_portfolio_snapshot,129547,0,100.0
 clean,R1 fee amount = aum_basis x bps / 10000 / 12,"fact_fees, tolerance $0.01",122197,0,100.0
 clean,R2 fee aum_basis = snapshot aum (same client-month),fact_fees vs fact_portfolio_snapshot,122197,0,100.0
 clean,R3 active_alpha = return_ytd - benchmark_return_ytd,"fact_portfolio_snapshot, tolerance 0.0001",129547,0,100.0
+clean,R3b return_ytd = aum / prior-December aum - 1,"fact_portfolio_snapshot rows with a prior December, tolerance 0.001",104823,0,100.0
 clean,R4 trade amount = shares x price,"fact_transactions trades, tolerance $0.01",197044,0,100.0
-clean,R5 fees: advisor_id = dim_client.advisor_id,fact vs dim_client,122197,0,100.0
-clean,R5 snapshots: advisor_id = dim_client.advisor_id,fact vs dim_client,129547,0,100.0
-clean,R5 transactions: advisor_id = dim_client.advisor_id,fact vs dim_client,298572,0,100.0
+clean,R5 fees: advisor_id = dim_client.advisor_id,"fact vs dim_client, known clients only",122197,0,100.0
+clean,R5 snapshots: advisor_id = dim_client.advisor_id,"fact vs dim_client, known clients only",129547,0,100.0
+clean,R5 transactions: advisor_id = dim_client.advisor_id,"fact vs dim_client, known clients only",298572,0,100.0
 clean,R6 one benchmark return per benchmark-month,fact_portfolio_snapshot,129547,0,100.0

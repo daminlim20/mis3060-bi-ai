@@ -139,7 +139,8 @@ RULES = [
     ("dim_client", "client_tier", "allowed list", one_of({"Retail", "HNW", "UHNW"}), None),
     ("dim_client", "primary_account_type", "allowed list", one_of(ACCOUNT_TYPES), None),
     ("dim_client", "is_active", "True/False", one_of({"True", "False"}), None),
-    ("dim_client", "client_since", "not after 2024-12-31", lambda s: s <= "2024-12-31", None),
+    ("dim_client", "client_since", "valid date, not after 2024-12-31",
+     lambda s: pd.to_datetime(s, format="%Y-%m-%d", errors="coerce") <= "2024-12-31", None),
     ("dim_date", "month", "range 1-12", between(1, 12), None),
     ("dim_date", "quarter", "range 1-4", between(1, 4), None),
     ("dim_date", "week_of_year", "range 1-53", between(1, 53), None),
@@ -219,6 +220,16 @@ def run_reconciliations(T, stage):
     add("R3 active_alpha = return_ytd - benchmark_return_ytd",
         "fact_portfolio_snapshot, tolerance 0.0001", gap.abs() <= 1e-4)
 
+    # R3b: return_ytd recomputed from balances (prior December snapshot as base)
+    dec = p[p.snapshot_date.str[5:7] == "12"]
+    next_year = (num(dec.year) + 1).astype("Int64").astype(str)       # non-numeric -> '<NA>'
+    base = dict(zip(dec.client_id + "|" + next_year, dec.aum))
+    b = num((p.client_id + "|" + p.year).map(base).fillna(""))
+    has = b.notna()
+    add("R3b return_ytd = aum / prior-December aum - 1",
+        "fact_portfolio_snapshot rows with a prior December, tolerance 0.001",
+        ((num(p.aum[has]) / b[has] - 1) - num(p.return_ytd[has])).abs() <= 1e-3)
+
     # R4: trade amount recomputed from shares x price (sign must agree too)
     tr = x[x.txn_type.isin(TRADES)]
     add("R4 trade amount = shares x price", "fact_transactions trades, tolerance $0.01",
@@ -227,11 +238,13 @@ def run_reconciliations(T, stage):
     # R5: advisor on each fact row = client's advisor in dim_client
     adv = T["dim_client"].drop_duplicates("client_id").set_index("client_id").advisor_id
     for name, df in [("fees", f), ("snapshots", p), ("transactions", x)]:
-        add(f"R5 {name}: advisor_id = dim_client.advisor_id", "fact vs dim_client",
-            df.advisor_id == df.client_id.map(adv))
+        known = df.client_id.isin(adv.index)       # orphans are an RI failure, not counted twice
+        add(f"R5 {name}: advisor_id = dim_client.advisor_id",
+            "fact vs dim_client, known clients only", (df.advisor_id == df.client_id.map(adv))[known])
 
     # R6: benchmark return identical for every client on the same benchmark-month
-    n = p.groupby(["benchmark_id", "snapshot_date"]).benchmark_return_ytd.transform("nunique")
+    n = (p.assign(_b=num(p.benchmark_return_ytd))
+          .groupby(["benchmark_id", "snapshot_date"])._b.transform("nunique"))
     add("R6 one benchmark return per benchmark-month", "fact_portfolio_snapshot", n == 1)
     return pd.DataFrame(out)
 
@@ -306,9 +319,8 @@ def scorecard(T, stage, ri, rules):
     rows = []
     for t in TABLES:
         df = T[t]
+        # added 0/1 flag columns are not in TYPES, so this excludes them
         cols = [c for c in df.columns if not c.startswith("is_") or c in TYPES["int"] | TYPES["bool"]]
-        cols = [c for c in cols if c not in {"is_risk_profile_missing", "is_return_suspect",
-                                              "is_post_departure_txn"}]   # added flags
         req = [c for c in cols if c not in STRUCTURAL_BLANKS.get(t, set())]
         completeness = (df[req].apply(lambda s: s.str.strip() != "")).to_numpy().mean()
 
@@ -324,7 +336,7 @@ def scorecard(T, stage, ri, rules):
 
         r = ri[ri.fact_table == t]
         nonnull = (r.rows - r.null_keys).sum()
-        ri_match = 1 - r.orphan_rows.sum() / nonnull if len(r) else float("nan")
+        ri_match = 1 - r.orphan_rows.sum() / nonnull if len(r) and nonnull else float("nan")
 
         rows.append({
             "table": t, "stage": stage, "rows": len(df),
@@ -335,6 +347,28 @@ def scorecard(T, stage, ri, rules):
             "pct_referential_match": round(100 * ri_match, 3) if ri_match == ri_match else "n/a",
         })
     return pd.DataFrame(rows)
+
+
+# =========================================================================
+# Gate: the clean stage must meet these, or the script stops (no report
+# is written for data that silently got worse).
+# =========================================================================
+KNOWN_CLEAN_FAILURES = {("fact_fees", "bps_charged", "range 0-100"): 1}   # decision C5
+
+
+def gate(R):
+    ri = R["ri"][R["ri"].stage == "clean"]
+    assert (ri.orphan_rows == 0).all(), "clean data has orphan foreign keys"
+    assert ri.dim_key_unique.all(), "a dimension key is not unique in clean data"
+    rec = R["recon"][R["recon"].stage == "clean"]
+    assert (rec.rows_failed == 0).all(), "a reconciliation fails on clean data"
+    rules = R["rules"][R["rules"].stage == "clean"]
+    for _, r in rules.iterrows():
+        allowed = KNOWN_CLEAN_FAILURES.get((r.table, r.column, r.rule), 0)
+        assert r.rows_failed == allowed, \
+            f"clean rule failed: {r.table}.{r.column} {r.rule} ({r.rows_failed} rows)"
+    print("Gate passed: clean data has 0 orphans, unique dimension keys, 0 reconciliation "
+          "failures, and only the documented rule exception (1 fee > 100 bps).")
 
 
 # =========================================================================
@@ -350,6 +384,7 @@ def main():
         out["iqr"].append(run_iqr(T, stage))
         out["score"].append(scorecard(T, stage, ri, rules))
     R = {k: pd.concat(v, ignore_index=True) for k, v in out.items()}
+    gate(R)
 
     score = R["score"].sort_values(["table", "stage"], key=lambda s: s.map(
         {"raw": 0, "clean": 1}) if s.name == "stage" else s)

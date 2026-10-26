@@ -143,3 +143,7 @@ The entries above were written before the cleaning code and are left unchanged. 
 | A6 `security_id` `45.0` | 197,175 | 197,044 | 131 orphan transactions (A5) had a security_id |
 
 The A2 check "PA = 414 + 25 = 439" becomes **PA = 434** after A1 removes 5 duplicate PA clients; the script asserts that per-state totals are preserved by the mapping itself. Every other count (25, 75, 300, 1,475, 200, 2,410) matched the log exactly.
+
+### Correction to B2 evidence (found while writing the Part E report)
+
+B2 originally said the extreme returns come from "deposits counted as performance". Checking that against the transaction ledger **disproved it**: client 29's balance jump (July 2022) happened in a month with a $53.6k *withdrawal*, and across all accounts monthly AUM changes have a correlation of **0.001** with that month's deposits − withdrawals. What *is* verified: `return_ytd` = AUM ÷ prior-December AUM − 1 on **100% of 104,823** rows that have a prior December (now reconciliation R3b in `03_validate.py`). So `return_ytd` measures balance change, not investment return, and balances do not reconcile to recorded flows. **The decision (flag, don't recompute) is unchanged and better supported**: without flows that tie to balances, a true return can't be computed. Added as limitation 10 in `README_clean.md`.

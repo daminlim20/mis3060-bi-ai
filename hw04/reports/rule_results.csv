@@ -10,7 +10,7 @@ raw,dim_client,risk_profile,allowed list (if present),2449,0,100.0
 raw,dim_client,client_tier,allowed list,2525,0,100.0
 raw,dim_client,primary_account_type,allowed list,2525,0,100.0
 raw,dim_client,is_active,True/False,2525,0,100.0
-raw,dim_client,client_since,not after 2024-12-31,2525,0,100.0
+raw,dim_client,client_since,"valid date, not after 2024-12-31",2525,0,100.0
 raw,dim_date,month,range 1-12,1827,0,100.0
 raw,dim_date,quarter,range 1-4,1827,0,100.0
 raw,dim_date,week_of_year,range 1-53,1827,0,100.0
@@ -46,7 +46,7 @@ clean,dim_client,risk_profile,allowed list (if present),2425,0,100.0
 clean,dim_client,client_tier,allowed list,2500,0,100.0
 clean,dim_client,primary_account_type,allowed list,2500,0,100.0
 clean,dim_client,is_active,True/False,2500,0,100.0
-clean,dim_client,client_since,not after 2024-12-31,2500,0,100.0
+clean,dim_client,client_since,"valid date, not after 2024-12-31",2500,0,100.0
 clean,dim_date,month,range 1-12,1827,0,100.0
 clean,dim_date,quarter,range 1-4,1827,0,100.0
 clean,dim_date,week_of_year,range 1-53,1827,0,100.0

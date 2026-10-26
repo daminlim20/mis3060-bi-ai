@@ -47,7 +47,7 @@ def load_raw(table):
 
 
 def num(s):
-    return pd.to_numeric(s, errors="coerce")
+    return pd.to_numeric(s.str.strip(), errors="coerce")
 
 
 def step(title):
@@ -70,7 +70,10 @@ def record_changes(table, df, mask, column, new_values):
         "table": table, "key_column": key, "key": df.loc[mask, key],
         "column": column, "old_value": old, "new_value": new,
     }))
+    untouched_before = df.loc[~mask, column].copy()
     df.loc[mask, column] = new
+    assert df.loc[~mask, column].equals(untouched_before), f"{column}: rows outside the fix changed"
+    assert (df.loc[mask, column] == new).all(), f"{column}: new values not applied"
     return int(mask.sum())
 
 
@@ -83,6 +86,24 @@ def quarantine(name, table, df, mask, reason, extra=None):
     q["quarantine_reason"] = reason
     QUARANTINE[name] = (table, q)
     return df.loc[~mask].copy()
+
+
+# Independent reference: the USPS name -> code list. The A2 mapping is checked
+# AGAINST this, so a wrong entry in the mapping (e.g. Texas -> TN) stops the script.
+USPS = {
+    "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR", "California": "CA",
+    "Colorado": "CO", "Connecticut": "CT", "Delaware": "DE", "Florida": "FL", "Georgia": "GA",
+    "Hawaii": "HI", "Idaho": "ID", "Illinois": "IL", "Indiana": "IN", "Iowa": "IA",
+    "Kansas": "KS", "Kentucky": "KY", "Louisiana": "LA", "Maine": "ME", "Maryland": "MD",
+    "Massachusetts": "MA", "Michigan": "MI", "Minnesota": "MN", "Mississippi": "MS",
+    "Missouri": "MO", "Montana": "MT", "Nebraska": "NE", "Nevada": "NV", "New Hampshire": "NH",
+    "New Jersey": "NJ", "New Mexico": "NM", "New York": "NY", "North Carolina": "NC",
+    "North Dakota": "ND", "Ohio": "OH", "Oklahoma": "OK", "Oregon": "OR", "Pennsylvania": "PA",
+    "Rhode Island": "RI", "South Carolina": "SC", "South Dakota": "SD", "Tennessee": "TN",
+    "Texas": "TX", "Utah": "UT", "Vermont": "VT", "Virginia": "VA", "Washington": "WA",
+    "West Virginia": "WV", "Wisconsin": "WI", "Wyoming": "WY", "District of Columbia": "DC",
+}
+US_STATES = set(USPS.values())
 
 
 # ---------- dim_client ----------------------------------------------------
@@ -106,6 +127,11 @@ def clean_dim_client(c, facts):
              zip(c.loc[dup, "last_name"], c.loc[dup].index.map(
                  lambda i: c.loc[c.client_id == first_id[i], "last_name"].iloc[0]))]
     print(f"    last_name is a truncated prefix of the original in {sum(trunc)} of 25")
+    assert sum(trunc) == 25, "a duplicate's last_name is not a truncation of the original"
+    other = [col for col in c.columns if col not in match_on + ["client_id", "_id", "last_name"]]
+    orig = c.set_index("client_id").loc[first_id[dup], other].reset_index(drop=True)
+    assert orig.equals(c.loc[dup, other].reset_index(drop=True)), \
+        "a duplicate differs from its original in a field other than last_name"
     for name, f in facts.items():
         assert not f.client_id.isin(dup_ids).any(), f"{name} references a duplicate id"
     c = quarantine("dim_client_duplicates", t, c, dup,
@@ -120,14 +146,22 @@ def clean_dim_client(c, facts):
     step("A2 dim_client.state: full names -> 2-letter codes")
     state_map = {"Pennsylvania": "PA", "Florida": "FL", "New York": "NY", "New Jersey": "NJ",
                  "California": "CA", "Illinois": "IL", "Texas": "TX"}
-    before_counts = c.state.replace(state_map).value_counts()
+    for name, code in state_map.items():
+        assert USPS.get(name) == code, f"mapping {name} -> {code} disagrees with USPS ({USPS.get(name)})"
+    before = c.state.copy()
     mask = c.state.isin(state_map)
     print(f"    before: {mask.sum()} full names, {c.state.nunique()} distinct values")
     n = record_changes(t, c, mask, "state", c.loc[mask, "state"].map(state_map))
     log(t, "state stored as full name", "standardize", n, "7-entry USPS mapping")
     print(f"    after:  {c.state.nunique()} distinct values, PA = {(c.state == 'PA').sum()}")
-    assert c.state.str.fullmatch(r"[A-Z]{2}").all()
-    assert c.state.value_counts().equals(before_counts), "per-state totals must be preserved"
+    assert c.state.isin(US_STATES).all(), "a state is not a valid USPS code"
+    # each code's new total = rows that already had the code + rows that had the
+    # USPS name for it (codes come from the reference, not from state_map)
+    for name in state_map:
+        code = USPS[name]
+        expected = (before == code).sum() + (before == name).sum()
+        assert (c.state == code).sum() == expected, f"{code}: total {expected} not preserved"
+    assert (c.state[~mask] == before[~mask]).all(), "an already-valid state was changed"
 
     step("B1 dim_client: flag blank risk_profile (value left blank)")
     c["is_risk_profile_missing"] = (c.risk_profile.str.strip() == "").astype(int).astype(str)
@@ -161,8 +195,10 @@ def clean_fact_transactions(x, clients, snapshots):
           f"{x.loc[has, 'security_id'].str.fullmatch(r'\d+\.0').all()}")
     assert x.loc[has, "security_id"].str.fullmatch(r"\d+\.0").all(), \
         "a security_id has a real decimal part; do not strip"
+    old_sec = num(x.loc[has, "security_id"])
     n = record_changes(t, x, has, "security_id",
                        x.loc[has, "security_id"].str.replace(r"\.0$", "", regex=True))
+    assert (num(x.loc[has, "security_id"]) == old_sec).all(), "security_id value changed"
     log(t, "security_id stored as decimal text", "standardize", n, "blanks left blank (cash flows)")
     assert x.loc[has, "security_id"].str.fullmatch(r"\d+").all()
     assert (x.security_id == "").sum() == (~has).sum(), "blank count must not change"
@@ -176,7 +212,9 @@ def clean_fact_transactions(x, clients, snapshots):
     # reconcile: the amount proves the size is right, so only the sign is wrong
     assert ((am[neg] - sh[neg].abs() * pr[neg]).abs() <= 0.01).all(), \
         "amount does not reconcile to |shares| x price; sign fix not justified"
+    old_sh = sh[neg]
     n = record_changes(t, x, neg, "shares", x.loc[neg, "shares"].str.lstrip("-"))
+    assert (num(x.loc[neg, "shares"]) == -old_sh).all(), "shares changed by more than the sign"
     log(t, "negative shares on Buy", "convert (abs)", n,
         "amount = |shares| x price verified on all rows first")
     sh = num(x.shares)
@@ -212,7 +250,10 @@ def clean_fact_portfolio_snapshot(p):
     gap = (num(new) - num(p.loc[pct, "benchmark_return_ytd"])
            - num(p.loc[pct, "active_alpha_ytd"])).abs()
     assert (gap <= 1e-4).all(), "alpha does not reconcile with /100; conversion not justified"
+    old_pct = num(p.loc[pct, "return_ytd"].str.replace("%", "", regex=False))
     n = record_changes(t, p, pct, "return_ytd", new)
+    assert ((num(p.loc[pct, "return_ytd"]) - old_pct / 100).abs() <= 5e-7).all(), \
+        "converted return is not the old value / 100"
     log(t, "return_ytd stored as percent text", "convert", n,
         "verified: return - benchmark = alpha on all converted rows")
     rt = num(p.return_ytd)
@@ -224,7 +265,8 @@ def clean_fact_portfolio_snapshot(p):
     sus = (rt > 1) | (rt < -0.9)
     p["is_return_suspect"] = sus.astype(int).astype(str)
     log(t, "YTD return > +100% or < -90%", "flag", sus.sum(),
-        f"{p.loc[sus, 'client_id'].nunique()} clients; deposits counted as performance")
+        f"{p.loc[sus, 'client_id'].nunique()} clients; return_ytd = aum / prior-Dec aum - 1, "
+        "so balance jumps on small accounts read as returns")
     assert sus.sum() == 1475
     return p
 
@@ -259,6 +301,18 @@ def main():
         assert list(clean[t].columns[:raw[t].shape[1]]) == list(raw[t].columns)
         assert all(c.startswith("is_") for c in added), f"{t}: unexpected new column"
         assert clean[t][PK[t]].is_unique, f"{t}: primary key not unique"
+
+    step("Proof: every changed cell is in value_changes")
+    changes = pd.concat(VALUE_CHANGES, ignore_index=True)
+    logged = set(zip(changes.table, changes.key.astype(str), changes.column))
+    for t in TABLES:
+        kept = raw[t].set_index(PK[t]).loc[clean[t][PK[t]]]
+        new = clean[t].set_index(PK[t])[kept.columns]
+        diff = (kept != new)
+        cells = {(t, str(k), col) for col in diff.columns for k in diff.index[diff[col]]}
+        missing = cells - logged
+        print(f"    {t:26} changed cells {len(cells):>7,}   unlogged {len(missing)}")
+        assert not missing, f"{t}: {len(missing)} changed cells not in value_changes"
 
     for t, df in clean.items():
         df.to_csv(CLEAN_DIR / f"{t}.csv", index=False)
