@@ -39,15 +39,10 @@ hw06/
 - Grand-total time intelligence: `SAMEPERIODLASTYEAR` over the full calendar maps to 2020–2023, so Ending AUM LY at Total = Dec 2023 balance; `DATEADD -1 month` at Total ends Nov 2024. The pandas side reproduces both explicitly.
 
 ## Claude Code review
-Claude Code reviewed `scripts/01_reconcile_measures.py` before the final commit. Findings and actions:
+Claude Code (VS Code) reviewed `scripts/01_reconcile_measures.py`, ran it on a scratch copy against `C:\MIS3060\HW05` (no repo files changed), and reproduced "42 rows, 42 match". Findings:
 
-| # | Claude Code flagged | What I did |
-|---|---|---|
-| 1 | Running against the `Wildcat Capital` folder crashed (`no attribute 'is_return_suspect'`): that export predates the cleaning step | Pointed `--data` at the clean CSVs in `HW05`; documented the run command above |
-| 2 | Default `--data` (`hw06/data`) doesn't exist in the repo, so running with no argument fails | Kept the argument required in practice; the run command in this README always passes it |
-| 3 | The merge with `powerbi_values.csv` is an **inner** join, so a slice missing from the Power BI export is silently skipped rather than reported | Accepted for this submission (only 42 slices were exported); the README states 42 of 89 were compared. Next step: switch back to an outer join once the full DAX export is run, so missing rows show as `match = False` |
-| 4 | Grand-total `Ending AUM LY` / `Ending AUM PM` encode an assumption about how SAMEPERIODLASTYEAR and DATEADD behave on the full calendar (→ Dec 2023 and Nov 2024) | Kept, and listed under Mismatches and fixes; verify with the Total rows of the full export |
-| 5 | Percentages transcribed at 2 dp sit close to the 0.0001 ratio tolerance (max rounding error 0.00005) | Checked: every transcribed ratio is within tolerance; the full-precision DAX export removes this risk |
-| 6 | pandas computes measures independently (no values read from Power BI) and slice filters mirror the model relationships (`dim_client` tier, `dim_date` year/month) | No change needed |
-
-Fix made while running: Fee Yield (bps) was first formatted as a percentage (showed 4315.4%); changed to decimal (43.2).
+1. **High — about half the measures are never reconciled.** The script computes 89 rows but `powerbi_values.csv` has 42; the inner join (line ~182) silently drops the other 47. Never checked against Power BI: AUM (naive SUM), AUM MoM %, AUM-Weighted Alpha, Alpha Signal; missing slices: 2024-12 (measure 5) and Fee Yield, Organic Growth Rate, Top 10 Client Share by tier. The inner join would also hide a misspelled measure name. Fix: outer join with `indicator=True` and treat `left_only`/`right_only` as failures.
+   - **Action:** not fixed before the deadline. The 42/42 result is reported as partial coverage, not full reconciliation.
+2. **High — `powerbi_values.csv` did not come from `export_values.dax`.** The query outputs 10-decimal values for ~89 rows; the CSV was transcribed from the report page at display precision.
+   - **Action:** documented above. Next step: run `export_values.dax` in DAX query view, replace the CSV, switch to the outer join, and re-run.
+3. Still checking at commit time: null `active_alpha_ytd` in earlier years, and Top-10 ranking for the Total slice.
