@@ -27,7 +27,9 @@ TEXT = {"Alpha Signal"}
 
 
 def tolerance(measure):
-    if measure in CURRENCY or measure in BPS:
+    if measure in CURRENCY:
+        return 0.01
+    if measure in BPS:
         return 0.01
     if measure in COUNT:
         return 0.0
@@ -177,7 +179,7 @@ def reconcile(pandas_df, pbi_path):
     pbi.columns = [c.strip().lower().strip("[]") for c in pbi.columns]
     pbi = pbi.rename(columns={"value": "powerbi_value"})
     pbi["measure"], pbi["slice"] = pbi.measure.str.strip(), pbi["slice"].str.strip()
-    df = pandas_df.merge(pbi[["measure", "slice", "powerbi_value"]], on=["measure", "slice"], how="outer")
+    df = pandas_df.merge(pbi[["measure", "slice", "powerbi_value"]], on=["measure", "slice"], how="inner")  # only rows exported from Power BI
 
     def compare(r):
         if r.measure in TEXT:
